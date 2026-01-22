@@ -1,0 +1,28 @@
+name: 'teachable_gmv'
+version: '1.0.0'
+config-version: 2
+
+profile: 'teachable_gmv'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  processing_date: "{{ run_started_at.strftime('%Y-%m-%d') }}"
+
+models:
+  teachable_gmv:
+    silver:
+      +schema: silver
+      +materialized: view
+    gold:
+      +schema: gold
+      +materialized: table

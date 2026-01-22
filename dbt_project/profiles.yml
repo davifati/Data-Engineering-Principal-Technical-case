@@ -1,0 +1,10 @@
+# dbt Profile Configuration for Teachable GMV Project
+# Copy this file to ~/.dbt/profiles.yml or set DBT_PROFILES_DIR
+
+teachable_gmv:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../warehouse/teachable.duckdb
+      threads: 4

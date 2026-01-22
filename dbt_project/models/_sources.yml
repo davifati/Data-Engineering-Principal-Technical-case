@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: purchase
+      - name: product_item
+      - name: order_transaction_cost_hist
+      - name: purchase_extra_info

@@ -1,0 +1,150 @@
+version: 2
+
+models:
+  - name: fact_gmv_snapshot
+    description: |
+      Tabela fact de GMV com snapshot diário.
+
+      Arquitetura: Append-only snapshot diário que preserva histórico imutável.
+
+      Grain: (purchase_id, snapshot_date) - cada linha representa o estado de uma purchase em um dia específico.
+
+      Partição: transaction_date (cumpre requisito #7)
+
+      Requisitos atendidos:
+      - #1: GMV só de released -> is_valid_for_gmv flag
+      - #2: Late arrivals -> snapshot captura estado atual
+      - #3: Imutabilidade -> append-only
+      - #4: As-of queries -> snapshot_date como filtro
+      - #5: Current/historical/lineage -> filtros simples
+      - #6: Simples (no joins) -> desnormalizada
+      - #7: Partição transaction_date -> particionada
+      - #8: D-1 batches -> snapshot_date = CURRENT_DATE
+      - #9: Reprocessing não reescreve -> append-only preserva histórico
+
+      Queries típicas:
+      ```sql
+      -- GMV atual por subsidiary
+      SELECT subsidiary, SUM(purchase_value) as gmv
+      FROM gold.fact_gmv_snapshot
+      WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM gold.fact_gmv_snapshot)
+        AND is_valid_for_gmv = true
+      GROUP BY subsidiary;
+
+      -- GMV de Janeiro visto em 31/Mar (as-of)
+      SELECT subsidiary, SUM(purchase_value) as gmv
+      FROM gold.fact_gmv_snapshot
+      WHERE snapshot_date = '2023-03-31'
+        AND transaction_date BETWEEN '2023-01-01' AND '2023-01-31'
+        AND is_valid_for_gmv = true
+      GROUP BY subsidiary;
+      ```
+
+    columns:
+      - name: purchase_id
+        description: Identificador único da compra
+        tests:
+          - not_null
+
+      - name: snapshot_date
+        description: Data do snapshot (dia em que o estado foi capturado)
+        tests:
+          - not_null
+
+      - name: transaction_date
+        description: Data da transação original (coluna de partição)
+        tests:
+          - not_null
+
+      - name: order_date
+        description: Data do pedido
+
+      - name: release_date
+        description: Data de liberação/captura do pagamento (preenchido = pago)
+
+      - name: subsidiary
+        description: Subsidiária da transação
+
+      - name: buyer_id
+        description: ID do comprador
+
+      - name: producer_id
+        description: ID do produtor/vendedor
+
+      - name: product_id
+        description: ID do produto
+
+      - name: purchase_status
+        description: Status da compra (APROVADA, CANCELADA, etc)
+
+      - name: purchase_value
+        description: Valor da compra (usado para cálculo de GMV)
+
+      - name: item_quantity
+        description: Quantidade de itens na compra
+
+      - name: is_valid_for_gmv
+        description: |
+          Flag indicando se a transação deve ser incluída no cálculo de GMV.
+          True quando: release_date IS NOT NULL AND purchase_status = 'APROVADA'
+        tests:
+          - not_null
+
+      - name: last_updated_at
+        description: Timestamp da última atualização dos dados fonte
+
+    tests:
+      - unique:
+          column_name: "purchase_id || '-' || snapshot_date"
+
+  - name: v_gmv_current
+    description: |
+      View de conveniência que expõe apenas o snapshot mais recente.
+
+      Propósito: Simplificar 80% das queries de consumo que querem o "estado atual",
+      eliminando a necessidade de subquery para encontrar MAX(snapshot_date).
+
+      Grain: purchase_id (1 row por purchase, apenas snapshot mais recente)
+
+      Quando usar:
+      - GMV atual por subsidiary
+      - KPIs executivos
+      - Dashboards de estado atual
+      - Qualquer query que não precise de visão histórica
+
+      Quando NÃO usar (usar fact_gmv_snapshot):
+      - Queries as-of ("GMV de Jan visto em Mar")
+      - Comparações entre snapshots
+      - Auditoria e reconciliação
+      - Análise de evolução temporal
+
+      Exemplo:
+      ```sql
+      -- GMV atual por subsidiary (simplificado)
+      SELECT subsidiary, SUM(purchase_value) as gmv
+      FROM gold.v_gmv_current
+      WHERE is_valid_for_gmv = true
+      GROUP BY subsidiary;
+      ```
+
+    columns:
+      - name: purchase_id
+        description: Identificador único da compra
+        tests:
+          - unique
+          - not_null
+
+      - name: snapshot_date
+        description: Data do snapshot (sempre o mais recente disponível)
+
+      - name: transaction_date
+        description: Data da transação original
+
+      - name: subsidiary
+        description: Subsidiária da transação
+
+      - name: purchase_value
+        description: Valor da compra
+
+      - name: is_valid_for_gmv
+        description: Flag indicando se entra no cálculo de GMV

@@ -1,0 +1,20 @@
+# Teachable GMV Technical Case - Dependencies
+# Python 3.10+ required
+
+# dbt with DuckDB adapter
+dbt-duckdb>=1.7.0
+
+# DuckDB for local analytics database
+duckdb>=0.10.0
+
+# Data manipulation
+pandas>=2.0.0
+
+# Parquet support (optional, using CSV for simplicity)
+pyarrow>=14.0.0
+
+# Environment variables (optional)
+python-dotenv>=1.0.0
+
+# Terminal UI for DuckDB queries
+harlequin>=1.20.0
