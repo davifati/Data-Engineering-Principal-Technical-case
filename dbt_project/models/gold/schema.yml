@@ -11,7 +11,7 @@ models:
 
       Partição: transaction_date (cumpre requisito #7)
 
-      Requisitos atendidos:
+      Requisitos atendidos !!!!!!
       - #1: GMV só de released -> is_valid_for_gmv flag
       - #2: Late arrivals -> snapshot captura estado atual
       - #3: Imutabilidade -> append-only

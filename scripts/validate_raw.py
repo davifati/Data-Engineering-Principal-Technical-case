@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Validate raw layer data against diagram schema and relationships."""
-
 import duckdb
 
 DB_PATH = "warehouse/teachable.duckdb"

@@ -16,7 +16,7 @@ snapshot as (
         purchase_id,
         current_date as snapshot_date,
 
-        -- Partição (transaction_date) - cumpre requisito #7
+        -- Partição 
         transaction_date,
 
         -- Dimensões temporais
@@ -34,7 +34,7 @@ snapshot as (
         purchase_value,
         item_quantity,
 
-        -- Flag para cálculo de GMV - cumpre requisito #1
+        -- Flag para cálculo de GMV
         -- GMV = apenas transações com pagamento capturado (release_date preenchido)
         -- e não canceladas (status APROVADA)
         (release_date is not null and purchase_status = 'APROVADA') as is_valid_for_gmv,

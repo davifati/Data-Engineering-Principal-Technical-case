@@ -4,8 +4,6 @@
     )
 }}
 
-
-
 with source as (
     select * from {{ source('raw', 'product_item') }}
 ),

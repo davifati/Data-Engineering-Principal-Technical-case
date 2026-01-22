@@ -1,7 +1,3 @@
-"""
-Validação dos 9 Requisitos do Technical Case
-Executa queries que PROVAM que cada requisito está implementado corretamente.
-"""
 
 import duckdb
 from pathlib import Path

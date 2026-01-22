@@ -4,7 +4,6 @@
     )
 }}
 
-
 with latest_snapshot as (
     select max(snapshot_date) as max_snapshot_date
     from {{ ref('fact_gmv_snapshot') }}

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""
-Generate deterministic mock CDC data following the technical case diagram.
 
+"""
 Schema from diagram:
-- purchase: purchase_id, buyer_id, prod_item_id, order_date, release_date, producer_id,
+- purchase:
+    purchase_id,
+    buyer_id,
+    prod_item_id,
+    order_date, release_date, producer_id,
             purchase_partition, prod_item_partition, purchase_total_value, purchase_status,
             transaction_datetime, transaction_date
 - product_item: prod_item_id, prod_item_partition, product_id, item_quantity, purchase_value,
@@ -59,8 +62,7 @@ def generate_purchase_data(rng: np.random.Generator) -> pd.DataFrame:
 
         # Initial status distribution
         initial_status = rng.choice(
-            ["INICIADA", "APROVADA", "CANCELADA"],
-            p=[0.25, 0.60, 0.15]
+            ["INICIADA", "APROVADA", "CANCELADA"], p=[0.25, 0.60, 0.15]
         )
 
         # release_date based on status
@@ -73,18 +75,20 @@ def generate_purchase_data(rng: np.random.Generator) -> pd.DataFrame:
         prod_item_partition = (prod_item_id % 10) * 100
         purchase_total_value = round(rng.uniform(25.0, 2500.0), 2)
 
-        base_purchases.append({
-            "purchase_id": purchase_id,
-            "buyer_id": buyer_id,
-            "prod_item_id": prod_item_id,
-            "order_date": order_date.date(),
-            "release_date": release_date.date() if release_date else None,
-            "producer_id": producer_id,
-            "purchase_partition": purchase_partition,
-            "prod_item_partition": prod_item_partition,
-            "purchase_total_value": purchase_total_value,
-            "purchase_status": initial_status,
-        })
+        base_purchases.append(
+            {
+                "purchase_id": purchase_id,
+                "buyer_id": buyer_id,
+                "prod_item_id": prod_item_id,
+                "order_date": order_date.date(),
+                "release_date": release_date.date() if release_date else None,
+                "producer_id": producer_id,
+                "purchase_partition": purchase_partition,
+                "prod_item_partition": prod_item_partition,
+                "purchase_total_value": purchase_total_value,
+                "purchase_status": initial_status,
+            }
+        )
 
     # Generate CDC events
     events = []
@@ -94,13 +98,19 @@ def generate_purchase_data(rng: np.random.Generator) -> pd.DataFrame:
         days_to_ingest = int(rng.integers(0, 3))
         first_ingest = datetime.combine(
             purchase["order_date"], datetime.min.time()
-        ) + timedelta(days=days_to_ingest, hours=int(rng.integers(0, 24)), minutes=int(rng.integers(0, 60)))
+        ) + timedelta(
+            days=days_to_ingest,
+            hours=int(rng.integers(0, 24)),
+            minutes=int(rng.integers(0, 60)),
+        )
 
-        events.append({
-            **purchase,
-            "transaction_datetime": first_ingest,
-            "transaction_date": first_ingest.date(),
-        })
+        events.append(
+            {
+                **purchase,
+                "transaction_datetime": first_ingest,
+                "transaction_date": first_ingest.date(),
+            }
+        )
 
         # ~30% get a second CDC event (status/release_date evolution)
         if rng.random() < 0.30:
@@ -126,16 +136,20 @@ def generate_purchase_data(rng: np.random.Generator) -> pd.DataFrame:
                     updated["purchase_status"] = "REEMBOLSADA"
                 else:
                     # release_date adjusted to later date
-                    current_release = datetime.combine(purchase["release_date"], datetime.min.time())
+                    current_release = datetime.combine(
+                        purchase["release_date"], datetime.min.time()
+                    )
                     updated["release_date"] = (
                         current_release + timedelta(days=int(rng.integers(1, 10)))
                     ).date()
 
-            events.append({
-                **updated,
-                "transaction_datetime": second_ingest,
-                "transaction_date": second_ingest.date(),
-            })
+            events.append(
+                {
+                    **updated,
+                    "transaction_datetime": second_ingest,
+                    "transaction_date": second_ingest.date(),
+                }
+            )
 
         # ~10% get a third event (replay or further update)
         if rng.random() < 0.10:
@@ -155,12 +169,16 @@ def generate_purchase_data(rng: np.random.Generator) -> pd.DataFrame:
         events.append(events[idx].copy())
 
     df = pd.DataFrame(events)
-    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(drop=True)
+    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(
+        drop=True
+    )
 
     return df
 
 
-def generate_product_item_data(rng: np.random.Generator, purchase_df: pd.DataFrame) -> pd.DataFrame:
+def generate_product_item_data(
+    rng: np.random.Generator, purchase_df: pd.DataFrame
+) -> pd.DataFrame:
     """
     Generate product_item CDC events.
 
@@ -169,7 +187,9 @@ def generate_product_item_data(rng: np.random.Generator, purchase_df: pd.DataFra
 
     Relationship: purchase.prod_item_id -> product_item.prod_item_id
     """
-    unique_items = purchase_df[["prod_item_id", "prod_item_partition", "purchase_total_value"]].drop_duplicates(subset=["prod_item_id"])
+    unique_items = purchase_df[
+        ["prod_item_id", "prod_item_partition", "purchase_total_value"]
+    ].drop_duplicates(subset=["prod_item_id"])
 
     events = []
 
@@ -188,18 +208,20 @@ def generate_product_item_data(rng: np.random.Generator, purchase_df: pd.DataFra
         offset_hours = int(rng.integers(-24, 48))
         transaction_dt = datetime.combine(base_date, datetime.min.time()) + timedelta(
             hours=offset_hours + int(rng.integers(0, 24)),
-            minutes=int(rng.integers(0, 60))
+            minutes=int(rng.integers(0, 60)),
         )
 
-        events.append({
-            "prod_item_id": prod_item_id,
-            "prod_item_partition": prod_item_partition,
-            "product_id": product_id,
-            "item_quantity": item_quantity,
-            "purchase_value": purchase_value,
-            "transaction_datetime": transaction_dt,
-            "transaction_date": transaction_dt.date(),
-        })
+        events.append(
+            {
+                "prod_item_id": prod_item_id,
+                "prod_item_partition": prod_item_partition,
+                "product_id": product_id,
+                "item_quantity": item_quantity,
+                "purchase_value": purchase_value,
+                "transaction_datetime": transaction_dt,
+                "transaction_date": transaction_dt.date(),
+            }
+        )
 
         # ~15% get value correction (always higher or equal)
         if rng.random() < 0.15:
@@ -207,15 +229,17 @@ def generate_product_item_data(rng: np.random.Generator, purchase_df: pd.DataFra
             second_dt = transaction_dt + timedelta(days=days_later)
             adjusted_value = round(purchase_value * rng.uniform(1.0, 1.10), 2)
 
-            events.append({
-                "prod_item_id": prod_item_id,
-                "prod_item_partition": prod_item_partition,
-                "product_id": product_id,
-                "item_quantity": item_quantity,
-                "purchase_value": adjusted_value,
-                "transaction_datetime": second_dt,
-                "transaction_date": second_dt.date(),
-            })
+            events.append(
+                {
+                    "prod_item_id": prod_item_id,
+                    "prod_item_partition": prod_item_partition,
+                    "product_id": product_id,
+                    "item_quantity": item_quantity,
+                    "purchase_value": adjusted_value,
+                    "transaction_datetime": second_dt,
+                    "transaction_date": second_dt.date(),
+                }
+            )
 
     # Add duplicates
     n_duplicates = max(1, int(len(events) * 0.03))
@@ -224,12 +248,16 @@ def generate_product_item_data(rng: np.random.Generator, purchase_df: pd.DataFra
         events.append(events[idx].copy())
 
     df = pd.DataFrame(events)
-    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(drop=True)
+    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(
+        drop=True
+    )
 
     return df
 
 
-def generate_order_transaction_cost_hist(rng: np.random.Generator, purchase_df: pd.DataFrame) -> pd.DataFrame:
+def generate_order_transaction_cost_hist(
+    rng: np.random.Generator, purchase_df: pd.DataFrame
+) -> pd.DataFrame:
     """
     Generate order_transaction_cost_hist CDC events.
 
@@ -237,7 +265,9 @@ def generate_order_transaction_cost_hist(rng: np.random.Generator, purchase_df: 
             order_transaction_cost_installment_value, order_transaction_cost_date,
             transaction_datetime, transaction_date
     """
-    unique_purchases = purchase_df[["purchase_id", "purchase_partition", "purchase_total_value", "order_date"]].drop_duplicates(subset=["purchase_id"])
+    unique_purchases = purchase_df[
+        ["purchase_id", "purchase_partition", "purchase_total_value", "order_date"]
+    ].drop_duplicates(subset=["purchase_id"])
 
     events = []
 
@@ -258,18 +288,20 @@ def generate_order_transaction_cost_hist(rng: np.random.Generator, purchase_df: 
         transaction_dt = datetime.combine(base_date, datetime.min.time()) + timedelta(
             days=offset_days,
             hours=int(rng.integers(0, 24)),
-            minutes=int(rng.integers(0, 60))
+            minutes=int(rng.integers(0, 60)),
         )
 
-        events.append({
-            "purchase_id": purchase_id,
-            "purchase_partition": purchase_partition,
-            "order_transaction_cost_vat_value": vat_value,
-            "order_transaction_cost_installment_value": installment_value,
-            "order_transaction_cost_date": cost_date,
-            "transaction_datetime": transaction_dt,
-            "transaction_date": transaction_dt.date(),
-        })
+        events.append(
+            {
+                "purchase_id": purchase_id,
+                "purchase_partition": purchase_partition,
+                "order_transaction_cost_vat_value": vat_value,
+                "order_transaction_cost_installment_value": installment_value,
+                "order_transaction_cost_date": cost_date,
+                "transaction_datetime": transaction_dt,
+                "transaction_date": transaction_dt.date(),
+            }
+        )
 
     # Add duplicates
     n_duplicates = max(1, int(len(events) * 0.03))
@@ -278,12 +310,16 @@ def generate_order_transaction_cost_hist(rng: np.random.Generator, purchase_df: 
         events.append(events[idx].copy())
 
     df = pd.DataFrame(events)
-    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(drop=True)
+    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(
+        drop=True
+    )
 
     return df
 
 
-def generate_purchase_extra_info(rng: np.random.Generator, purchase_df: pd.DataFrame) -> pd.DataFrame:
+def generate_purchase_extra_info(
+    rng: np.random.Generator, purchase_df: pd.DataFrame
+) -> pd.DataFrame:
     """
     Generate purchase_extra_info CDC events.
 
@@ -293,7 +329,9 @@ def generate_purchase_extra_info(rng: np.random.Generator, purchase_df: pd.DataF
     """
     subsidiaries = ["nacional", "internacional"]
 
-    unique_purchases = purchase_df[["purchase_id", "purchase_partition"]].drop_duplicates(subset=["purchase_id"])
+    unique_purchases = purchase_df[
+        ["purchase_id", "purchase_partition"]
+    ].drop_duplicates(subset=["purchase_id"])
 
     events = []
 
@@ -311,16 +349,18 @@ def generate_purchase_extra_info(rng: np.random.Generator, purchase_df: pd.DataF
         transaction_dt = datetime.combine(base_date, datetime.min.time()) + timedelta(
             days=offset_days,
             hours=int(rng.integers(0, 24)),
-            minutes=int(rng.integers(0, 60))
+            minutes=int(rng.integers(0, 60)),
         )
 
-        events.append({
-            "purchase_id": purchase_id,
-            "purchase_partition": purchase_partition,
-            "subsidiary": subsidiary,
-            "transaction_datetime": transaction_dt,
-            "transaction_date": transaction_dt.date(),
-        })
+        events.append(
+            {
+                "purchase_id": purchase_id,
+                "purchase_partition": purchase_partition,
+                "subsidiary": subsidiary,
+                "transaction_datetime": transaction_dt,
+                "transaction_date": transaction_dt.date(),
+            }
+        )
 
         # ~12% get subsidiary change (like case example)
         if rng.random() < 0.12:
@@ -328,13 +368,15 @@ def generate_purchase_extra_info(rng: np.random.Generator, purchase_df: pd.DataF
             second_dt = transaction_dt + timedelta(days=days_later)
             new_subsidiary = "internacional" if subsidiary == "nacional" else "nacional"
 
-            events.append({
-                "purchase_id": purchase_id,
-                "purchase_partition": purchase_partition,
-                "subsidiary": new_subsidiary,
-                "transaction_datetime": second_dt,
-                "transaction_date": second_dt.date(),
-            })
+            events.append(
+                {
+                    "purchase_id": purchase_id,
+                    "purchase_partition": purchase_partition,
+                    "subsidiary": new_subsidiary,
+                    "transaction_datetime": second_dt,
+                    "transaction_date": second_dt.date(),
+                }
+            )
 
     # Add duplicates
     n_duplicates = max(1, int(len(events) * 0.03))
@@ -343,7 +385,9 @@ def generate_purchase_extra_info(rng: np.random.Generator, purchase_df: pd.DataF
         events.append(events[idx].copy())
 
     df = pd.DataFrame(events)
-    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(drop=True)
+    df = df.sample(frac=1, random_state=int(rng.integers(0, 10000))).reset_index(
+        drop=True
+    )
 
     return df
 
@@ -390,7 +434,9 @@ def main():
         print(f"  {status}: {count}")
 
     print(f"\nPurchases with release_date: {purchase_df['release_date'].notna().sum()}")
-    print(f"Purchases with NULL release_date: {purchase_df['release_date'].isna().sum()}")
+    print(
+        f"Purchases with NULL release_date: {purchase_df['release_date'].isna().sum()}"
+    )
 
     print(f"\nSubsidiary distribution:")
     for sub, count in extra_df.groupby("subsidiary").size().items():
@@ -404,10 +450,14 @@ def main():
     if not multi_version.empty:
         for pid in multi_version["purchase_id"].unique()[:3]:
             print(f"\npurchase_id {pid}:")
-            rows = purchase_df[purchase_df["purchase_id"] == pid].sort_values("transaction_datetime")
+            rows = purchase_df[purchase_df["purchase_id"] == pid].sort_values(
+                "transaction_datetime"
+            )
             for _, r in rows.iterrows():
                 release = r["release_date"] if pd.notna(r["release_date"]) else "NULL"
-                print(f"  {r['transaction_datetime']} | status={r['purchase_status']} | release_date={release}")
+                print(
+                    f"  {r['transaction_datetime']} | status={r['purchase_status']} | release_date={release}"
+                )
 
 
 if __name__ == "__main__":

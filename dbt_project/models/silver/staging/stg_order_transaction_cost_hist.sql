@@ -4,7 +4,6 @@
     )
 }}
 
-
 with source as (
     select * from {{ source('raw', 'order_transaction_cost_hist') }}
 ),
