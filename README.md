@@ -1,256 +1,139 @@
-# Teachable GMV Technical Case
+# GMV Analytical Layer — Technical Case
 
-Data Engineering Principal I - Technical Assessment
+Pipeline de dados para GMV diário por subsidiary, com snapshots imutáveis e histórico completo.
 
-## Overview
-
-This project implements an immutable, historically consistent analytical data model for calculating daily GMV (Gross Merchandising Value) by subsidiary.
-
-## Tech Stack
-
-- **Python 3.10+** - Runtime environment
-- **DuckDB** - Local analytical database
-- **dbt (dbt-duckdb)** - Data transformation framework
-- **pandas/numpy** - Data generation utilities
-
-## Project Structure
-
-```
-.
-├── README.md
-├── requirements.txt
-├── dbt_project/
-│   ├── dbt_project.yml
-│   ├── profiles.yml.example
-│   └── models/
-│       └── sources.yml
-├── scripts/
-│   ├── generate_mock_cdc.py
-│   └── load_to_duckdb.py
-├── data/
-│   └── raw/                    # Generated CSV files
-├── warehouse/
-│   └── teachable.duckdb        # DuckDB database file
-└── claude/
-    └── decidir_estrategia_solucao.md
-```
+---
 
 ## Quick Start
 
-### 1. Create Python Virtual Environment
-
 ```bash
-# Create virtual environment
-python -m venv .venv
+# 1. Setup
+cd dbt_project
+pip install dbt-duckdb
 
-# Activate virtual environment
-# On macOS/Linux:
-source .venv/bin/activate
+# 2. Run pipeline
+dbt run
 
-# On Windows:
-.venv\Scripts\activate
+# 3. Validate
+dbt test
 ```
 
-### 2. Install Dependencies
+---
 
-```bash
-pip install -r requirements.txt
+## O Problema
+
+CDC events chegam atrasados, fora de ordem, e podem ser reprocessados. Como garantir que o GMV reportado ontem não mude amanhã?
+
+**Solução**: Daily snapshots. Cada dia = foto completa. Snapshots anteriores nunca mudam.
+
+---
+
+## Estrutura
+
+```
+├── dbt_project/
+│   └── models/
+│       ├── silver/          # Dedup + Enrich
+│       │   ├── staging/     # stg_purchase, stg_product_item, stg_purchase_extra_info
+│       │   └── intermediate/# int_purchase_enriched
+│       └── gold/            # Consumo
+│           ├── fact_gmv_snapshot.sql  # Tabela principal
+│           └── v_gmv_current.sql      # View latest snapshot
+│
+├── scripts/
+│   ├── calculate_expected_gmv.py      # Calcula GMV esperado
+│   └── validate_requirements.py       # Valida 9 requisitos
+│
+├── warehouse/
+│   └── teachable.duckdb               # Database local
+│
+└── docs/
+    ├── arch.md              # Arquitetura e trade-offs
+    ├── ddl.md               # DDL + grain + particionamento
+    ├── product.md           # Visão de produto
+    └── advanced.md          # Real-time, semantic layer, corrections
 ```
 
-### 3. Generate Mock CDC Data
+---
 
-```bash
-python scripts/generate_mock_cdc.py --out data/raw --seed 42
-```
+## Queries Essenciais
 
-Expected output:
-```
-Generating mock CDC data with seed=42
-Generating purchase data...
-  -> 52 rows written to purchase.csv
-Generating order_transaction_cost_hist data...
-  -> 51 rows written to order_transaction_cost_hist.csv
-Generating product_item data...
-  -> 52 rows written to product_item.csv
-Generating purchase_extra_info data...
-  -> 51 rows written to purchase_extra_info.csv
-```
-
-### 4. Load Data into DuckDB
-
-```bash
-python scripts/load_to_duckdb.py --db warehouse/teachable.duckdb --data-dir data/raw
-```
-
-Expected output:
-```
-Creating DuckDB database: warehouse/teachable.duckdb
-Creating 'raw' schema...
-
-Creating tables and loading data...
-
-  Creating table raw.purchase...
-  Loading data from data/raw/purchase.csv...
-  -> Loaded 52 rows into raw.purchase
-
-  Creating table raw.order_transaction_cost_hist...
-  Loading data from data/raw/order_transaction_cost_hist.csv...
-  -> Loaded 51 rows into raw.order_transaction_cost_hist
-
-  Creating table raw.product_item...
-  Loading data from data/raw/product_item.csv...
-  -> Loaded 52 rows into raw.product_item
-
-  Creating table raw.purchase_extra_info...
-  Loading data from data/raw/purchase_extra_info.csv...
-  -> Loaded 51 rows into raw.purchase_extra_info
-
-==================================================
-SUMMARY - Row counts per table:
-==================================================
-  raw.purchase: 52 rows
-  raw.order_transaction_cost_hist: 51 rows
-  raw.product_item: 52 rows
-  raw.purchase_extra_info: 51 rows
-```
-
-### 5. Configure dbt Profile
-
-Copy the example profile to your dbt profiles directory:
-
-```bash
-# Option A: Copy to default dbt location
-mkdir -p ~/.dbt
-cp dbt_project/profiles.yml.example ~/.dbt/profiles.yml
-
-# Option B: Use local profiles directory
-cp dbt_project/profiles.yml.example dbt_project/profiles.yml
-```
-
-If using Option B (local profiles), run dbt with:
-```bash
-cd dbt_project && dbt debug --profiles-dir .
-```
-
-### 6. Verify dbt Setup
-
-```bash
-cd dbt_project && dbt debug
-```
-
-Expected output:
-```
-  Connection:
-    database: ../warehouse/teachable.duckdb
-    schema: main
-    Connection test: OK connection ok
-  All checks passed!
-```
-
-## Verify Raw Data in DuckDB
-
-You can use the DuckDB CLI to verify the data:
-
-```bash
-# Start DuckDB CLI
-duckdb warehouse/teachable.duckdb
-
-# Check row counts
-SELECT COUNT(*) FROM raw.purchase;
-SELECT COUNT(*) FROM raw.order_transaction_cost_hist;
-SELECT COUNT(*) FROM raw.product_item;
-SELECT COUNT(*) FROM raw.purchase_extra_info;
-
-# Sample purchase data
-SELECT * FROM raw.purchase LIMIT 5;
-
-# Check subsidiaries distribution
-SELECT subsidiary, COUNT(*)
-FROM raw.purchase_extra_info
+**GMV atual por subsidiary:**
+```sql
+SELECT subsidiary, SUM(purchase_value) as gmv
+FROM gold.v_gmv_current
+WHERE is_valid_for_gmv = true
 GROUP BY subsidiary;
-
-# Check purchase status distribution
-SELECT purchase_status, COUNT(*)
-FROM raw.purchase
-GROUP BY purchase_status;
-
-# Exit DuckDB
-.exit
 ```
 
-## Raw CDC Tables Schema
-
-### purchase
-| Column | Type | Description |
-|--------|------|-------------|
-| purchase_id | BIGINT | Unique purchase identifier |
-| buyer_id | BIGINT | Buyer/customer identifier |
-| prod_item_id | BIGINT | FK to product_item |
-| order_date | DATE | Order placement date |
-| release_date | DATE | Payment capture date (NULL if unpaid) |
-| producer_id | BIGINT | Course producer identifier |
-| purchase_partition | BIGINT | Partition key |
-| prod_item_partition | BIGINT | Product item partition key |
-| purchase_total_value | DOUBLE | Total purchase value |
-| purchase_status | VARCHAR | INICIADA, APROVADA, CANCELADA, REEMBOLSADA |
-| transaction_datetime | TIMESTAMP | Ingestion timestamp |
-| transaction_date | DATE | Ingestion date |
-
-### order_transaction_cost_hist
-| Column | Type | Description |
-|--------|------|-------------|
-| purchase_id | BIGINT | FK to purchase |
-| purchase_partition | BIGINT | Partition key |
-| order_transaction_cost_vat_value | DOUBLE | VAT/tax value |
-| order_transaction_cost_installment_value | DOUBLE | Installment fee |
-| order_transaction_cost_date | DATE | Cost record date |
-| transaction_datetime | TIMESTAMP | Ingestion timestamp |
-| transaction_date | DATE | Ingestion date |
-
-### product_item
-| Column | Type | Description |
-|--------|------|-------------|
-| prod_item_id | BIGINT | Unique product item identifier |
-| prod_item_partition | BIGINT | Partition key |
-| product_id | BIGINT | Product/course identifier |
-| item_quantity | INTEGER | Quantity purchased |
-| purchase_value | DOUBLE | Line item value |
-| transaction_datetime | TIMESTAMP | Ingestion timestamp |
-| transaction_date | DATE | Ingestion date |
-
-### purchase_extra_info
-| Column | Type | Description |
-|--------|------|-------------|
-| purchase_id | BIGINT | FK to purchase |
-| purchase_partition | BIGINT | Partition key |
-| subsidiary | VARCHAR | nacional, internacional, latam |
-| transaction_datetime | TIMESTAMP | Ingestion timestamp |
-| transaction_date | DATE | Ingestion date |
-
-## Table Relationships
-
-```
-purchase_extra_info.purchase_id ──────┐
-                                      │
-order_transaction_cost_hist.purchase_id ──► purchase.purchase_id
-                                      │
-purchase.prod_item_id ────────────────┴──► product_item.prod_item_id
+**GMV de Janeiro (como reportado em 31/Mar):**
+```sql
+SELECT subsidiary, SUM(purchase_value) as gmv
+FROM gold.fact_gmv_snapshot
+WHERE snapshot_date = '2023-03-31'
+  AND transaction_date BETWEEN '2023-01-01' AND '2023-01-31'
+  AND is_valid_for_gmv = true
+GROUP BY subsidiary;
 ```
 
-## Mock Data Characteristics
+**Histórico de uma compra:**
+```sql
+SELECT snapshot_date, purchase_status, release_date, is_valid_for_gmv
+FROM gold.fact_gmv_snapshot
+WHERE purchase_id = 72
+ORDER BY snapshot_date;
+```
 
-The generated mock data includes:
-- **50 base purchases** with various statuses
-- **3 subsidiaries**: nacional (50%), internacional (35%), latam (15%)
-- **4 statuses**: INICIADA (15%), APROVADA (60%), CANCELADA (15%), REEMBOLSADA (10%)
-- **Late arrivals**: Events arriving 1-15 days after order date
-- **Duplicate rows**: ~3-5% duplicates to simulate replay scenarios
-- **Out-of-order events**: Some records with earlier timestamps ingested later
+---
 
-## Next Steps
+## Números Validados
 
-After completing this setup, the analytical models (silver/gold layers) will be implemented to:
-1. Deduplicate CDC events
-2. Join the 3 source tables
-3. Build the immutable fact table with GMV calculations
-4. Support as-of queries for historical consistency
+| Subsidiary | GMV |
+|------------|-----|
+| Nacional | 10,168.25 |
+| Internacional | 13,393.65 |
+| **Total** | **23,561.90** |
+
+---
+
+## Requisitos Atendidos
+
+| # | Requisito | Status |
+|---|-----------|--------|
+| 1 | GMV apenas de transações liberadas | ✓ |
+| 2 | Lida com late arrivals | ✓ |
+| 3 | Preserva resultados históricos | ✓ |
+| 4 | Suporta as-of queries | ✓ |
+| 5 | Acesso fácil a current/historical/lineage | ✓ |
+| 6 | Simples de consultar (sem joins) | ✓ |
+| 7 | Particionado por transaction_date | ✓ |
+| 8 | Atualizado em batch D-1 | ✓ |
+| 9 | Reprocessamento não reescreve histórico | ✓ |
+
+---
+
+## Decisão Arquitetural
+
+| Opção | Descrição | Decisão |
+|-------|-----------|---------|
+| A. Bitemporal (SCD2) | valid_from/valid_to + processed_at | ❌ Queries complexas |
+| B. Daily Snapshot | Foto completa por dia | ✅ **Escolhido** |
+| C. Hybrid (delta) | Só grava mudanças | ❌ Imutabilidade convencional |
+
+**Por que B?** Queries simples (`WHERE snapshot_date = 'YYYY-MM-DD'`), imutabilidade estrutural, late arrivals automáticos.
+
+---
+
+## Documentação
+
+- [`arch.md`](arch.md) — Arquitetura, layers, trade-offs
+- [`ddl.md`](ddl.md) — DDL, grain, particionamento, imutabilidade
+- [`product.md`](product.md) — Visão de produto, contratos, consumidores
+- [`advanced.md`](advanced.md) — Real-time, semantic layer, corrections
+- [`architecture_diagram.md`](architecture_diagram.md) — Diagrama visual
+
+---
+
+## Autor
+
+Davi Fati — Principal Data Engineer Technical Case
